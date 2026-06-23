@@ -30,6 +30,15 @@ stays cheap no matter how often iOS refreshes it.
 4. Add the widget: long-press the home screen → **+** → **Scriptable** →
    pick **Medium** → add → long-press it → **Edit Widget** → choose this script.
 
+### Iterating from GitHub (no iCloud / no copy-paste)
+
+Instead of pasting `daily-summary-widget.js` itself, paste **`loader.js`** into
+Scriptable once and point the widget at that. On every run the loader fetches
+the latest `daily-summary-widget.js` from this repo's raw URL and executes it,
+so the loop becomes: edit here → `git push` → re-run on phone. The loader needs
+network each run (the widget already does) and your Gemini key still lives in the
+phone Keychain, never in the repo.
+
 ## Configuration
 
 Edit the `CONFIG` block at the top of `daily-summary-widget.js`:
