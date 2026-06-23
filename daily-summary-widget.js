@@ -32,7 +32,12 @@ async function main() {
   const apiKey = await getApiKey();
   // The briefing is cached once per day; the headline is fetched fresh each run
   // (it's free and changes through the day), so they run independently.
-  const [summary, news] = await Promise.all([getSummary(apiKey), getNews()]);
+  // Running inside the app always regenerates the briefing (handy while
+  // iterating); the home-screen widget keeps using the once-a-day cache.
+  const [summary, news] = await Promise.all([
+    getSummary(apiKey, !config.runsInWidget),
+    getNews(),
+  ]);
 
   const widget = buildWidget(summary, news);
   if (config.runsInWidget) {
@@ -64,10 +69,10 @@ async function getApiKey() {
 }
 
 // ── Summary (with per-day cache) ──────────────────────────────────────────────
-async function getSummary(apiKey) {
+async function getSummary(apiKey, forceFresh = false) {
   const today = todayKey();
   const cached = readCache();
-  if (cached?.date === today && cached.summary) return cached.summary;
+  if (!forceFresh && cached?.date === today && cached.summary) return cached.summary;
 
   if (!apiKey) {
     return "Add a Gemini API key (run this script once in the Scriptable app) to get daily summaries.";
