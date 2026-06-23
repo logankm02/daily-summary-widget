@@ -89,7 +89,10 @@ async function getSummary(apiKey, forceFresh = false) {
     writeCache({ date: today, summary: text });
     return text;
   } catch (err) {
-    if (cached?.summary) return cached.summary; // fall back to whatever we last had
+    // In-app (forceFresh): surface the error so failures are visible while
+    // iterating. As a widget: fall back to the last good summary so the home
+    // screen never shows an error.
+    if (!forceFresh && cached?.summary) return cached.summary;
     return `Could not generate summary${err?.message ? ` — ${err.message}` : ""}.`;
   }
 }
