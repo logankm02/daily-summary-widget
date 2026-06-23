@@ -2,7 +2,7 @@
 
 A JARVIS-style daily briefing on your iOS home screen, built with
 [Scriptable](https://scriptable.app). It's a phone port of the Home-tab summary
-from [chrome-newtab-workspace](https://github.com/logankm02/chrome-newtab-workspace) —
+from [Logan's New Tab](https://github.com/logankm02/logans-new-tab) —
 same prompt, same calm tone, regenerated independently on-device.
 
 ## What it shows

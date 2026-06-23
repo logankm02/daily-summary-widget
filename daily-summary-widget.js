@@ -3,7 +3,7 @@
 // icon-color: deep-blue; icon-glyph: sun;
 //
 // Daily Summary Widget — a JARVIS-style daily briefing for the iOS home screen.
-// Port of the Chrome new-tab Home summary (chrome-newtab-workspace) to Scriptable.
+// Port of the Chrome new-tab Home summary (Logan's New Tab / logans-new-tab) to Scriptable.
 //
 // Data sources (all on-device or public, no extra backend):
 //   • Calendar  — native iOS Calendar (next 7 days)
