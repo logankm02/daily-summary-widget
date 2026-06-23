@@ -343,17 +343,6 @@ function buildWidget(summary, news) {
   const ink = dark ? new Color("#f2f2f2") : new Color("#2c3033");
   const muted = dark ? new Color("#ffffff", 0.6) : new Color("#2c3033", 0.55);
   const accent = dark ? new Color("#5fc6ff") : new Color("#1f6fe0");
-  const line = dark ? new Color("#ffffff", 0.14) : new Color("#2c3033", 0.12);
-
-  const header = w.addText(
-    new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
-  );
-  header.font = Font.semiboldRoundedSystemFont(12);
-  header.textColor = muted;
-
-  w.addSpacer(8);
-  addDivider(w, line);
-  w.addSpacer(9);
 
   const body = w.addText(summary);
   body.font = Font.regularSystemFont(15);
@@ -378,14 +367,6 @@ function buildWidget(summary, news) {
   }
 
   return w;
-}
-
-// A hairline divider that stretches to the widget's content width.
-function addDivider(w, color) {
-  const s = w.addStack();
-  s.backgroundColor = color;
-  s.size = new Size(0, 1);
-  s.addSpacer();
 }
 
 // ── Cache helpers (file in Scriptable's local documents) ─────────────────────
