@@ -9,13 +9,16 @@ same prompt, same calm tone, regenerated independently on-device.
 
 One short briefing per day covering:
 
-- **Calendar** — today + the most time-sensitive thing this week (native iOS Calendar)
+- **Calendar** — today + the most time-sensitive thing this week (native iOS Calendar, including any Google account synced into it)
 - **Tasks** — a nudge toward what matters (native iOS Reminders)
 - **Sports** — Liverpool / Bills, only if a game is today or tomorrow (ESPN public API)
-- **Weather** — today's range and a jacket/hoodie call (open-meteo, no key)
+- **News** — one top headline, pinned at the bottom (Google News RSS, no key)
+- **Weather** — only when it's actually actionable, e.g. rain or snow (open-meteo, no key)
 
-It generates with Google Gemini and **caches one summary per day**, so the widget
-stays cheap no matter how often iOS refreshes it.
+It generates with Google Gemini and **caches one summary per day**; the headline
+is fetched fresh each run (cached ~30 min). The widget stays cheap no matter how
+often iOS refreshes it. Weather is intentionally downplayed — your phone already
+shows the temperature.
 
 ## Setup
 

@@ -25,22 +25,23 @@ const CONFIG = {
 };
 
 const CACHE_FILE = "daily-summary-cache.json";
+const NEWS_CACHE_FILE = "daily-summary-news.json";
 
 // ── Entry point ─────────────────────────────────────────────────────────────
 async function main() {
   const apiKey = await getApiKey();
-  const summary = await getSummary(apiKey);
+  // The briefing is cached once per day; the headline is fetched fresh each run
+  // (it's free and changes through the day), so they run independently.
+  const [summary, news] = await Promise.all([getSummary(apiKey), getNews()]);
 
+  const widget = buildWidget(summary, news);
   if (config.runsInWidget) {
-    const widget = buildWidget(summary);
     Script.setWidget(widget);
-    Script.complete();
   } else {
     // Running inside the Scriptable app — preview a medium widget.
-    const widget = buildWidget(summary);
     await widget.presentMedium();
-    Script.complete();
   }
+  Script.complete();
 }
 
 // ── Gemini key (stored in Keychain) ──────────────────────────────────────────
@@ -201,6 +202,48 @@ async function getNextNflFixture(teamId) {
   }
 }
 
+// ── Data: News (Google News RSS, no key) ─────────────────────────────────────
+// Fetched fresh each run but cached briefly so frequent widget refreshes don't
+// hammer the feed and so it survives a dropped connection.
+async function getNews() {
+  const cached = readNewsCache();
+  if (cached && Date.now() - cached.ts < 30 * 60 * 1000) return cached.news;
+  try {
+    const xml = await new Request(
+      "https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en",
+    ).loadString();
+    const title = firstHeadline(xml);
+    if (!title) return cached?.news || null;
+    const news = { title: tidy(stripSource(title)) };
+    writeNewsCache({ ts: Date.now(), news });
+    return news;
+  } catch {
+    return cached?.news || null; // offline: show the last headline we had
+  }
+}
+
+// Pull the first <item><title> out of the RSS, ignoring the channel's own title.
+function firstHeadline(xml) {
+  const parser = new XMLParser(xml);
+  let inItem = false, capturing = false, current = "", result = null;
+  parser.didStartElement = (name) => {
+    if (name === "item") inItem = true;
+    if (inItem && name === "title" && result === null) { capturing = true; current = ""; }
+  };
+  parser.foundCharacters = (str) => { if (capturing) current += str; };
+  parser.didEndElement = (name) => {
+    if (name === "title" && capturing) { result = current.trim(); capturing = false; }
+    if (name === "item") inItem = false;
+  };
+  parser.parse();
+  return result;
+}
+
+// Google News titles read "Headline - Source"; drop the trailing source.
+function stripSource(title) {
+  return title.replace(/\s+-\s+[^-]+$/, "").trim();
+}
+
 // ── Gemini call (mirrors the Chrome extension's prompt) ──────────────────────
 async function generateSummary(apiKey, { calendar, tasks, weather, fixtures }) {
   const today = new Date().toLocaleDateString("en-US", {
@@ -240,11 +283,11 @@ async function generateSummary(apiKey, { calendar, tasks, weather, fixtures }) {
   const prompt =
     `You are JARVIS — a calm, dry, precise personal assistant. Today is ${today}.\n\n` +
     `Briefing data:\n${sections.join("\n")}\n\n` +
-    `Write a daily briefing of 3-4 sentences, addressed to me in the second person ("you"). Guidance:\n` +
+    `Write a daily briefing of 2-3 sentences, addressed to me in the second person ("you"). Guidance:\n` +
     `- Lead with what matters today: anything on the calendar today, plus the single most time-sensitive item in the week ahead. If nothing is on the calendar today, say so plainly. If there is something in the future we mention keep it very brief.\n` +
     `- If there are tasks on the list, work in a brief, pointed nudge toward the one or two that matter most. Skip entirely if there are none.\n` +
     `- Mention a Bills or Liverpool game only if it falls today or tomorrow; otherwise leave it out.\n` +
-    `- Cover the weather and how it shifts through the day, then close with a one-line call on a jacket, hoodie, or neither based on it.\n\n` +
+    `- I can already see the temperature on my phone, so do NOT report the forecast or give a jacket/hoodie call. Mention weather ONLY if it's genuinely actionable today — rain, snow, or a sharp swing worth planning around — and then in just a few words. Otherwise omit weather entirely.\n\n` +
     `Rules: use only the data above — never invent events, times, scores, or details. No greetings or time-of-day salutations (I may read this at any hour), no cheerleading, no sign-off, no filler. Keep it tight and matter-of-fact.`;
 
   let lastErr = "";
@@ -267,7 +310,7 @@ async function generateSummary(apiKey, { calendar, tasks, weather, fixtures }) {
         continue;
       }
       const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-      if (text) return text;
+      if (text) return tidy(text);
     } catch (e) {
       lastErr = e?.message || String(e);
     }
@@ -275,8 +318,17 @@ async function generateSummary(apiKey, { calendar, tasks, weather, fixtures }) {
   throw new Error(lastErr || "no model responded");
 }
 
+// Collapse the stray double spaces (and other runs of whitespace) the model
+// sometimes emits, without touching paragraph breaks.
+function tidy(text) {
+  return text
+    .replace(/[ \t]{2,}/g, " ")   // runs of spaces/tabs → one space
+    .replace(/ +\n/g, "\n")        // trailing spaces before newlines
+    .trim();
+}
+
 // ── Widget UI ─────────────────────────────────────────────────────────────────
-function buildWidget(summary) {
+function buildWidget(summary, news) {
   const w = new ListWidget();
   const dark = Device.isUsingDarkAppearance();
 
@@ -290,6 +342,8 @@ function buildWidget(summary) {
 
   const ink = dark ? new Color("#f2f2f2") : new Color("#2c3033");
   const muted = dark ? new Color("#ffffff", 0.6) : new Color("#2c3033", 0.55);
+  const accent = dark ? new Color("#5fc6ff") : new Color("#1f6fe0");
+  const line = dark ? new Color("#ffffff", 0.14) : new Color("#2c3033", 0.12);
 
   const header = w.addText(
     new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
@@ -297,7 +351,9 @@ function buildWidget(summary) {
   header.font = Font.semiboldRoundedSystemFont(12);
   header.textColor = muted;
 
-  w.addSpacer(7);
+  w.addSpacer(8);
+  addDivider(w, line);
+  w.addSpacer(9);
 
   const body = w.addText(summary);
   body.font = Font.regularSystemFont(15);
@@ -306,13 +362,30 @@ function buildWidget(summary) {
 
   w.addSpacer();
 
-  const foot = w.addDate(new Date());
-  foot.applyTimeStyle();
-  foot.font = Font.systemFont(9);
-  foot.textColor = muted;
-  foot.rightAlignText();
+  // Pinned news line: accent "WIRE" tag + a single headline.
+  if (news?.title) {
+    const row = w.addStack();
+    row.centerAlignContent();
+    const tag = row.addText("WIRE");
+    tag.font = Font.semiboldRoundedSystemFont(9);
+    tag.textColor = accent;
+    row.addSpacer(7);
+    const hl = row.addText(news.title);
+    hl.font = Font.mediumSystemFont(11);
+    hl.textColor = muted;
+    hl.lineLimit = 1;
+    hl.minimumScaleFactor = 0.75;
+  }
 
   return w;
+}
+
+// A hairline divider that stretches to the widget's content width.
+function addDivider(w, color) {
+  const s = w.addStack();
+  s.backgroundColor = color;
+  s.size = new Size(0, 1);
+  s.addSpacer();
 }
 
 // ── Cache helpers (file in Scriptable's local documents) ─────────────────────
@@ -337,6 +410,26 @@ function writeCache(obj) {
 }
 function todayKey() {
   return new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD, local
+}
+
+function newsCachePath() {
+  const fm = FileManager.local();
+  return fm.joinPath(fm.documentsDirectory(), NEWS_CACHE_FILE);
+}
+function readNewsCache() {
+  try {
+    const fm = FileManager.local();
+    const p = newsCachePath();
+    if (!fm.fileExists(p)) return null;
+    return JSON.parse(fm.readString(p));
+  } catch {
+    return null;
+  }
+}
+function writeNewsCache(obj) {
+  try {
+    FileManager.local().writeString(newsCachePath(), JSON.stringify(obj));
+  } catch { /* best effort */ }
 }
 
 await main();
