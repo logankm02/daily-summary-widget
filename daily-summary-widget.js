@@ -10,6 +10,7 @@
 //   • Tasks     — native iOS Reminders (incomplete)
 //   • Weather   — open-meteo.com (no key)
 //   • Fixtures  — ESPN public API (Liverpool + Bills)
+//   • Lifting   — Logan's Lifts web app (/api/today, public, no key)
 //   • Summary   — Google Gemini (your API key)
 //
 // Setup: see README.md. First run in-app prompts for your Gemini key and
@@ -21,6 +22,7 @@ const CONFIG = {
   soccerTeamName: "Liverpool",
   nflTeamId: 2, // Buffalo Bills — ESPN team id
   calendarDays: 7,
+  liftingUrl: "https://logans-lifts.vercel.app/api/today", // Logan's Lifts — today's plan
   models: ["gemini-2.5-flash-lite", "gemini-2.0-flash-lite", "gemini-2.0-flash"],
 };
 
@@ -79,13 +81,14 @@ async function getSummary(apiKey, forceFresh = false) {
   }
 
   try {
-    const [calendar, tasks, weather, fixtures] = await Promise.all([
+    const [calendar, tasks, weather, fixtures, lifting] = await Promise.all([
       getCalendar(),
       getTasks(),
       getWeather(),
       getFixtures(),
+      getLifting(),
     ]);
-    const text = await generateSummary(apiKey, { calendar, tasks, weather, fixtures });
+    const text = await generateSummary(apiKey, { calendar, tasks, weather, fixtures, lifting });
     writeCache({ date: today, summary: text });
     return text;
   } catch (err) {
@@ -210,6 +213,24 @@ async function getNextNflFixture(teamId) {
   }
 }
 
+// ── Data: Lifting (Logan's Lifts /api/today, public) ─────────────────────────
+// Returns the workout queued up for today (split/day + exercises), or null. The
+// web app does all the computation; we just fetch the ready-made JSON contract.
+async function getLifting() {
+  try {
+    const data = await new Request(CONFIG.liftingUrl).loadJSON();
+    if (!data?.hasPlan || !data.scheduled) return null;
+    return {
+      splitName: data.scheduled.splitName,
+      dayName: data.scheduled.dayName,
+      exercises: (data.scheduled.exercises || []).map((e) => e.name).filter(Boolean),
+      inProgress: Boolean(data.inProgressSessionId),
+    };
+  } catch {
+    return null;
+  }
+}
+
 // ── Data: News (Google News RSS, no key) ─────────────────────────────────────
 // Fetched fresh each run but cached briefly so frequent widget refreshes don't
 // hammer the feed and so it survives a dropped connection.
@@ -253,7 +274,7 @@ function stripSource(title) {
 }
 
 // ── Gemini call (mirrors the Chrome extension's prompt) ──────────────────────
-async function generateSummary(apiKey, { calendar, tasks, weather, fixtures }) {
+async function generateSummary(apiKey, { calendar, tasks, weather, fixtures, lifting }) {
   const today = new Date().toLocaleDateString("en-US", {
     weekday: "long", month: "long", day: "numeric",
   });
@@ -279,6 +300,12 @@ async function generateSummary(apiKey, { calendar, tasks, weather, fixtures }) {
     const d = new Date(fixtures.bills.date).toLocaleDateString("en-US", { month: "short", day: "numeric" });
     sections.push(`Bills next game: vs ${fixtures.bills.opponent} on ${d}.`);
   }
+  if (lifting?.dayName) {
+    const lifts = lifting.exercises.slice(0, 4).join(", ");
+    sections.push(
+      `Lifting today: ${lifting.dayName} day (${lifting.splitName})${lifts ? ` — ${lifts}` : ""}${lifting.inProgress ? " [already in progress]" : ""}.`,
+    );
+  }
   if (weather) {
     const rainNote =
       weather.maxRain >= 60 ? `, ${weather.maxRain}% rain chance`
@@ -294,6 +321,7 @@ async function generateSummary(apiKey, { calendar, tasks, weather, fixtures }) {
     `Write a daily briefing of 2-3 sentences, addressed to me in the second person ("you"). Guidance:\n` +
     `- Lead with what matters today: anything on the calendar today, plus the single most time-sensitive item in the week ahead. If nothing is on the calendar today, say so plainly. If there is something in the future we mention keep it very brief.\n` +
     `- If there are tasks on the list, work in a brief, pointed nudge toward the one or two that matter most. Skip entirely if there are none.\n` +
+    `- If a lift is queued for today, name the day (e.g. "Push day") and a couple of the key exercises in a few words. If it's already in progress, acknowledge that instead of telling me to start. Omit if there's no lift today.\n` +
     `- Mention a Bills or Liverpool game only if it falls today or tomorrow; otherwise leave it out.\n` +
     `- I can already see the temperature on my phone, so do NOT report the forecast or give a jacket/hoodie call. Mention weather ONLY if it's genuinely actionable today — rain, snow, or a sharp swing worth planning around — and then in just a few words. Otherwise omit weather entirely.\n\n` +
     `Rules: use only the data above — never invent events, times, scores, or details. No greetings or time-of-day salutations (I may read this at any hour), no cheerleading, no sign-off, no filler. Keep it tight and matter-of-fact.`;
